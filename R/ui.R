@@ -7,11 +7,21 @@ ui <- navbarPage(
     useSweetAlert()
   ),
   tabPanel("PA State and County Cases",
-           fluidRow("PA State and Country Cases"),
+           fluidRow(h1("PA State Cases")),
            fluidRow(valueBoxOutput('currentPACases'),
+                    valueBoxOutput('pa7DayRolling'),
+                    valueBoxOutput('totalPaCases')),
+           fluidRow(plotlyOutput('paCasePlot')),
+           fluidRow(br(),
+                    h1("PA County Cases")),
+           fluidRow(column(5),
+                    column(2,uiOutput('casesCountySelection')),
+                    column(5)
                     ),
-           fluidRow(h1("Clickable map here maybe?")),
-           fluidRow(h1("Something after a map click here"))),
-  tabPanel("PA State and County Vaccination Data"),
-  tabPanel("Some sort of analysis tab")
+           fluidRow(plotlyOutput('countyCasePlot'))),
+  tabPanel("PA State and County Vaccination Data",
+           fluidRow(h1("PA State Vaccination Details")),
+           fluidRow('Some Charts here')),
+  tabPanel("Some sort of analysis tab"),
+  footer = "App Version 0.1.0"
 )

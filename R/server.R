@@ -14,7 +14,8 @@ server <- function(input, output, session) {
   
   countyVaccineDate <- RSocrata::read.socrata( "https://data.pa.gov/resource/bicw-3gwi.json",
                                      app_token = 'zqKFZgHzagrp74fam4vXZ7aWH') %>% 
-    mutate(across(c(3:5), parse_integer))
+    mutate(across(c(3:5), parse_integer),
+           date = lubridate::as_date(date))
   
   updateProgressBar(
     session = session,
@@ -44,7 +45,8 @@ server <- function(input, output, session) {
     mutate(across(c(3:12), parse_number)) %>% 
     arrange(date) %>% 
     group_by(county) %>% 
-    mutate(rolling7Day = round(roll_mean(cases, n = 7, align = "right", fill = NA),0)) %>% 
+    mutate(rolling7Day = round(roll_mean(cases, n = 7, align = "right", fill = NA),0),
+           date = lubridate::as_date(date))%>% 
     ungroup()
   
   updateProgressBar(
@@ -62,7 +64,17 @@ server <- function(input, output, session) {
   paRollingAvg <- casesCount %>% 
     group_by(date) %>% 
     summarise(cases = sum(cases)) %>% 
-    mutate(rolling7Day = round(roll_mean(cases, n = 7, align = "right", fill = NA),0))
+    mutate(rolling7Day = round(roll_mean(cases, n = 7, align = "right", fill = NA),0),
+           totalCases = cumsum(cases),
+           date = lubridate::as_date(date))
+  
+  paVaccineTotals <- coveredPercent %>% 
+    summarise(totalPop = sum(county_population),
+              totalPartial = sum(partially_covered),
+              totalFully = sum(fully_covered),
+              totalAdditional = sum(additional_dose1)) %>% 
+    mutate(percentFull = totalFully/totalPop,
+           percentPartial = totalPartial/totalPop)
   
   
   updateProgressBar(
@@ -74,7 +86,7 @@ server <- function(input, output, session) {
   
   output$currentPACases <- renderValueBox(
     valueBox(
-      paTotalsToday$todayCases,
+      scales::comma(paTotalsToday$todayCases),
       paste("Current Case Count for", paTotalsToday$date),
       icon = icon("biohazard")
     )
@@ -82,10 +94,67 @@ server <- function(input, output, session) {
   
   output$pa7DayRolling <- renderValueBox(
     valueBox(
-      paRollingAvg$rolling7Day[NROW(paRollingAvg)],
-      "Current 7 Day Rolling Average"
+      scales::comma(paRollingAvg$rolling7Day[NROW(paRollingAvg)]),
+      "Current 7 Day Rolling Average",
+      color = "green"
     )
   )
+  
+  output$totalPaCases <- renderValueBox(
+    valueBox(
+      scales::comma(sum(paRollingAvg$cases)),
+      "Total PA Cases (overall)",
+      color = "orange"
+    )
+  )
+  
+  output$paCasePlot <- renderPlotly(
+    ggplotly(
+    ggplot(paRollingAvg, aes(x = date, y = cases)) +
+      geom_col() +
+      geom_line(aes(x = date, y=rolling7Day), color = 'blue') +
+      theme_classic() +
+      scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
+      labs(
+        x = "",
+        y = "Case Count",
+        title = "PA State Daily Case Count and 7 Day Rolling Average"
+      )
+    )
+  )
+  
+  output$casesCountySelection <- renderUI(
+    selectizeInput('casesCountyInput', "Select County", choices = sort(unique(casesCount$county)))
+  )
+  
+  output$countyCasePlot <- renderPlotly({
+    
+    temp <- casesCount %>% filter(county == input$casesCountyInput)
+    
+    ggplotly(
+      ggplot(temp, aes(x = date, y = cases)) +
+        geom_col() +
+        geom_line(aes(x = date, y=rolling7Day), color = 'blue') +
+        theme_classic() +
+        scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
+        labs(
+          x = "",
+          y = "Case Count",
+          title = paste(input$casesCountyInput, "Daily Case Count and 7 Day Rolling Average"
+        )
+    )
+    )
+  })
+  
+  # the code below will be used to make a map at some point in the future
+  # paMap <- map('state', region = 'penn')
+  # 
+  # paCounty <- readLines("./PaCounty2021_06.geojson") %>% paste(collapse = "\n")
+  # 
+  # output$paCasesMap <- renderLeaflet(
+  #   leaflet(paMap) %>%  setView(lng = -77.29, lat = 40.615, zoom = 7) %>% 
+  #     addGeoJSON(paCounty, weight = 1, color = "#444444", fill = FALSE)
+  # )
     
   closeSweetAlert(session = session)
   sendSweetAlert(
