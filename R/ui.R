@@ -21,7 +21,17 @@ ui <- navbarPage(
            fluidRow(plotlyOutput('countyCasePlot'))),
   tabPanel("PA State and County Vaccination Data",
            fluidRow(h1("PA State Vaccination Details")),
+           fluidRow(column(10),
+                    column(2,
+                           fluidRow(
+                             p("Turn on CumSum Line:"),
+                             switchInput('turnOnLne', onLabel = "Yes", offLabel = "No")
+                           )
+                    )
+                    ),
+                           
+           fluidRow(plotlyOutput('paVaccinePlot')),
            fluidRow('Some Charts here')),
   tabPanel("Some sort of analysis tab"),
-  footer = "App Version 0.1.0"
+  footer = "App Version 0.1.6"
 )

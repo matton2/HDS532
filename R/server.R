@@ -11,6 +11,9 @@ server <- function(input, output, session) {
   
   
   # for this application, I dont think we will need any reactive values but we will see
+  # as it turns out, i do need reactive values!
+  
+  rv <- reactiveValues()
   
   countyVaccineDate <- RSocrata::read.socrata( "https://data.pa.gov/resource/bicw-3gwi.json",
                                      app_token = 'zqKFZgHzagrp74fam4vXZ7aWH') %>% 
@@ -68,13 +71,21 @@ server <- function(input, output, session) {
            totalCases = cumsum(cases),
            date = lubridate::as_date(date))
   
-  paVaccineTotals <- coveredPercent %>% 
+  paVaccineTotal <- coveredPercent %>% 
     summarise(totalPop = sum(county_population),
               totalPartial = sum(partially_covered),
               totalFully = sum(fully_covered),
               totalAdditional = sum(additional_dose1)) %>% 
     mutate(percentFull = totalFully/totalPop,
            percentPartial = totalPartial/totalPop)
+  
+  paVaccineDates <- countyVaccineDate %>% 
+    group_by(date) %>% 
+    summarise(partially_covered = sum(partially_covered, na.rm = TRUE),
+              fully_covered = sum(fully_covered, na.rm = TRUE)) %>% 
+    ungroup() %>% 
+    mutate(cumSumPartial = cumsum(partially_covered),
+           cumSumFully = cumsum(fully_covered))
   
   
   updateProgressBar(
@@ -108,6 +119,7 @@ server <- function(input, output, session) {
     )
   )
   
+  
   output$paCasePlot <- renderPlotly(
     ggplotly(
     ggplot(paRollingAvg, aes(x = date, y = cases)) +
@@ -129,6 +141,8 @@ server <- function(input, output, session) {
   
   output$countyCasePlot <- renderPlotly({
     
+    req(input$casesCountyInput)
+    
     temp <- casesCount %>% filter(county == input$casesCountyInput)
     
     ggplotly(
@@ -145,6 +159,50 @@ server <- function(input, output, session) {
     )
     )
   })
+  
+  rv$paVaccinePlot <- ggplot(paVaccineDates, aes(x = date, y = fully_covered)) +
+    geom_col() +
+    #geom_line(aes(x = date, y=cumSumFully), color = 'blue') +
+    theme_classic() +
+    scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
+    labs(
+      x = "",
+      y = "Fully Vaccinated Count",
+      title = "PA State Daily Fully Vaccinated and CumSum"
+    )
+  
+  output$paVaccinePlot <- renderPlotly({
+    ggplotly(
+      rv$paVaccinePlot
+    )
+  })
+    
+    observeEvent(input$turnOnLne, {
+      if(input$turnOnLne == TRUE) {
+        rv$paVaccinePlot <- ggplot(paVaccineDates, aes(x = date, y = fully_covered)) +
+          geom_col() +
+          geom_line(aes(x = date, y=cumSumFully), color = 'blue') +
+          theme_classic() +
+          scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
+          labs(
+            x = "",
+            y = "Fully Vaccinated Count",
+            title = "PA State Daily Fully Vaccinated and CumSum"
+          )
+      } else {
+        rv$paVaccinePlot <- ggplot(paVaccineDates, aes(x = date, y = fully_covered)) +
+          geom_col() +
+          #geom_line(aes(x = date, y=cumSumFully), color = 'blue') +
+          theme_classic() +
+          scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
+          labs(
+            x = "",
+            y = "Fully Vaccinated Count",
+            title = "PA State Daily Fully Vaccinated and CumSum"
+          )
+      }
+      
+    }, ignoreInit = TRUE)
   
   # the code below will be used to make a map at some point in the future
   # paMap <- map('state', region = 'penn')
