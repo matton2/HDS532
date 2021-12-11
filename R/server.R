@@ -77,7 +77,9 @@ server <- function(input, output, session) {
               totalFully = sum(fully_covered),
               totalAdditional = sum(additional_dose1)) %>% 
     mutate(percentFull = totalFully/totalPop,
-           percentPartial = totalPartial/totalPop)
+           percentPartial = totalPartial/totalPop,
+           percentAdditional = totalAdditional/totalPop,
+           atLeastOneDose = (totalPartial + totalFully + totalAdditional)/totalPop)
   
   paVaccineDates <- countyVaccineDate %>% 
     group_by(date) %>% 
@@ -85,7 +87,13 @@ server <- function(input, output, session) {
               fully_covered = sum(fully_covered, na.rm = TRUE)) %>% 
     ungroup() %>% 
     mutate(cumSumPartial = cumsum(partially_covered),
-           cumSumFully = cumsum(fully_covered))
+           cumSumFully = cumsum(fully_covered),
+           rolling7DayFullyCovered = round(roll_mean(fully_covered, n = 7, align = "right", fill = NA),0))
+  
+  combinedPAData <- paRollingAvg %>% 
+    left_join(paVaccineDates) %>% 
+    pivot_longer(cols = -date, names_to = 'measurement') %>% 
+    filter(measurement %in% c('rolling7Day', 'rolling7DayFullyCovered'))
   
   
   updateProgressBar(
@@ -98,7 +106,7 @@ server <- function(input, output, session) {
   output$currentPACases <- renderValueBox(
     valueBox(
       scales::comma(paTotalsToday$todayCases),
-      paste("Current Case Count for", paTotalsToday$date),
+      paste("Cases Count for", paTotalsToday$date),
       icon = icon("biohazard")
     )
   )
@@ -116,6 +124,30 @@ server <- function(input, output, session) {
       scales::comma(sum(paRollingAvg$cases)),
       "Total PA Cases (overall)",
       color = "orange"
+    )
+  )
+  
+  output$vaccineAtleast1Dose <- renderValueBox(
+    valueBox(
+      scales::percent(paVaccineTotal$atLeastOneDose),
+      "PA Residents with atleast 1 Dose",
+      color = "green"
+    )
+  )
+  
+  output$totalVaccineCoverage <- renderValueBox(
+    valueBox(
+      scales::percent(paVaccineTotal$percentFull),
+      "PA Residents Fully Vaccinated (2 Doses)",
+      color = "green"
+    )
+  )
+  
+  output$totalVaccineAdditioanlCoverage <- renderValueBox(
+    valueBox(
+      scales::percent(paVaccineTotal$percentAdditional),
+      "PA Residents with an Additional Dose",
+      color = "purple"
     )
   )
   
@@ -139,6 +171,10 @@ server <- function(input, output, session) {
     selectizeInput('casesCountyInput', "Select County", choices = sort(unique(casesCount$county)))
   )
   
+  output$vaccinesCountrySelection <- renderUI(
+    selectizeInput('vaccineCountyInput', "Select County", choices = sort(unique(countyVaccineDate$county)))
+  )
+  
   output$countyCasePlot <- renderPlotly({
     
     req(input$casesCountyInput)
@@ -160,6 +196,27 @@ server <- function(input, output, session) {
     )
   })
   
+  output$countyVaccinePlot <- renderPlotly({
+    
+    req(input$vaccineCountyInput)
+    
+    temp <- countyVaccineDate %>% filter(county == input$vaccineCountyInput)
+    
+    ggplotly(
+      ggplot(temp, aes(x = date, y = fully_covered)) +
+        geom_col() +
+        theme_classic() +
+        scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
+        labs(
+          x = "",
+          y = "Vaccine Count",
+          title = paste(input$vaccineCountyInput, "Daily Vaccine Data (Fully Covered)"
+          )
+        )
+    )
+  })
+  
+  # init the basic plot without the geom line
   rv$paVaccinePlot <- ggplot(paVaccineDates, aes(x = date, y = fully_covered)) +
     geom_col() +
     #geom_line(aes(x = date, y=cumSumFully), color = 'blue') +
@@ -177,8 +234,9 @@ server <- function(input, output, session) {
     )
   })
     
-    observeEvent(input$turnOnLne, {
-      if(input$turnOnLne == TRUE) {
+  # change the plot based on the turnOnLine input
+    observeEvent(input$turnOnLine, {
+      if(input$turnOnLine == TRUE) {
         rv$paVaccinePlot <- ggplot(paVaccineDates, aes(x = date, y = fully_covered)) +
           geom_col() +
           geom_line(aes(x = date, y=cumSumFully), color = 'blue') +
@@ -213,6 +271,12 @@ server <- function(input, output, session) {
   #   leaflet(paMap) %>%  setView(lng = -77.29, lat = 40.615, zoom = 7) %>% 
   #     addGeoJSON(paCounty, weight = 1, color = "#444444", fill = FALSE)
   # )
+    
+  # build download buttons
+    output$downloadPAStateCaseData <- downloadMe(paRollingAvg, "PA Case Data")
+    output$downloadPACountyCaseData <- downloadMe(casesCount %>% filter(county == input$casesCountyInput),
+                                                  paste(input$casesCountyInput, "Data"))
+    output$downloadAllPACountyCaseData <- downloadMe(casesCount, "All PA County Data")
     
   closeSweetAlert(session = session)
   sendSweetAlert(
