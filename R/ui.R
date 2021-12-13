@@ -51,5 +51,5 @@ ui <- navbarPage(
            fluidRow(plotlyOutput('countyVaccinePlot'))
            ),
   tabPanel("Some sort of analysis tab"),
-  footer = "App Version 0.2.0"
+  footer = "App Version 0.2.1"
 )
