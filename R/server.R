@@ -16,7 +16,7 @@ server <- function(input, output, session) {
   rv <- reactiveValues()
   
   countyVaccineDate <- RSocrata::read.socrata( "https://data.pa.gov/resource/bicw-3gwi.json",
-                                     app_token = 'zqKFZgHzagrp74fam4vXZ7aWH') %>% 
+                                               app_token = 'zqKFZgHzagrp74fam4vXZ7aWH') %>% 
     mutate(across(c(3:5), parse_integer),
            date = lubridate::as_date(date))
   
@@ -69,7 +69,8 @@ server <- function(input, output, session) {
     summarise(cases = sum(cases)) %>% 
     mutate(rolling7Day = round(roll_mean(cases, n = 7, align = "right", fill = NA),0),
            totalCases = cumsum(cases),
-           date = lubridate::as_date(date))
+           date = lubridate::as_date(date),
+           normCases = (cases - min(cases))/(max(cases) - min(cases)))
   
   paVaccineTotal <- coveredPercent %>% 
     summarise(totalPop = sum(county_population),
@@ -88,12 +89,13 @@ server <- function(input, output, session) {
     ungroup() %>% 
     mutate(cumSumPartial = cumsum(partially_covered),
            cumSumFully = cumsum(fully_covered),
-           rolling7DayFullyCovered = round(roll_mean(fully_covered, n = 7, align = "right", fill = NA),0))
+           rolling7DayFullyCovered = round(roll_mean(fully_covered, n = 7, align = "right", fill = NA),0),
+           normFullyVaccine = (fully_covered - min(fully_covered))/(max(fully_covered) - min(fully_covered)),
+           normPartially = (partially_covered - min(partially_covered))/(max(partially_covered) - min(partially_covered)))
   
   combinedPAData <- paRollingAvg %>% 
     left_join(paVaccineDates) %>% 
-    pivot_longer(cols = -date, names_to = 'measurement') %>% 
-    filter(measurement %in% c('rolling7Day', 'rolling7DayFullyCovered'))
+    pivot_longer(cols = -date, names_to = 'measurement') 
   
   
   updateProgressBar(
@@ -131,7 +133,7 @@ server <- function(input, output, session) {
     valueBox(
       scales::percent(paVaccineTotal$atLeastOneDose),
       "PA Residents with atleast 1 Dose",
-      color = "green"
+      color = "blue"
     )
   )
   
@@ -147,23 +149,23 @@ server <- function(input, output, session) {
     valueBox(
       scales::percent(paVaccineTotal$percentAdditional),
       "PA Residents with an Additional Dose",
-      color = "purple"
+      color = "orange"
     )
   )
   
   
   output$paCasePlot <- renderPlotly(
     ggplotly(
-    ggplot(paRollingAvg, aes(x = date, y = cases)) +
-      geom_col() +
-      geom_line(aes(x = date, y=rolling7Day), color = 'blue') +
-      theme_classic() +
-      scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
-      labs(
-        x = "",
-        y = "Case Count",
-        title = "PA State Daily Case Count and 7 Day Rolling Average"
-      )
+      ggplot(paRollingAvg, aes(x = date, y = cases)) +
+        geom_col() +
+        geom_line(aes(x = date, y=rolling7Day), color = 'blue') +
+        theme_classic() +
+        scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
+        labs(
+          x = "",
+          y = "Case Count",
+          title = "PA State Daily Case Count and 7 Day Rolling Average"
+        )
     )
   )
   
@@ -191,8 +193,8 @@ server <- function(input, output, session) {
           x = "",
           y = "Case Count",
           title = paste(input$casesCountyInput, "Daily Case Count and 7 Day Rolling Average"
+          )
         )
-    )
     )
   })
   
@@ -233,34 +235,94 @@ server <- function(input, output, session) {
       rv$paVaccinePlot
     )
   })
-    
+  
   # change the plot based on the turnOnLine input
-    observeEvent(input$turnOnLine, {
-      if(input$turnOnLine == TRUE) {
-        rv$paVaccinePlot <- ggplot(paVaccineDates, aes(x = date, y = fully_covered)) +
-          geom_col() +
-          geom_line(aes(x = date, y=cumSumFully), color = 'blue') +
-          theme_classic() +
-          scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
-          labs(
-            x = "",
-            y = "Fully Vaccinated Count",
-            title = "PA State Daily Fully Vaccinated and CumSum"
-          )
-      } else {
-        rv$paVaccinePlot <- ggplot(paVaccineDates, aes(x = date, y = fully_covered)) +
-          geom_col() +
-          #geom_line(aes(x = date, y=cumSumFully), color = 'blue') +
-          theme_classic() +
-          scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
-          labs(
-            x = "",
-            y = "Fully Vaccinated Count",
-            title = "PA State Daily Fully Vaccinated and CumSum"
-          )
-      }
+  observeEvent(input$turnOnLine, {
+    if(input$turnOnLine == TRUE) {
+      rv$paVaccinePlot <- ggplot(paVaccineDates, aes(x = date, y = fully_covered)) +
+        geom_col() +
+        geom_line(aes(x = date, y=cumSumFully), color = 'blue') +
+        theme_classic() +
+        scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
+        labs(
+          x = "",
+          y = "Fully Vaccinated Count",
+          title = "PA State Daily Fully Vaccinated and CumSum"
+        )
+    } else {
+      rv$paVaccinePlot <- ggplot(paVaccineDates, aes(x = date, y = fully_covered)) +
+        geom_col() +
+        #geom_line(aes(x = date, y=cumSumFully), color = 'blue') +
+        theme_classic() +
+        scale_x_date(date_labels = "%Y %b %d", date_breaks = '3 month') +
+        labs(
+          x = "",
+          y = "Fully Vaccinated Count",
+          title = "PA State Daily Fully Vaccinated and CumSum"
+        )
+    }
+    
+  }, ignoreInit = TRUE)
+  
+  
+  output$normalFacet <- renderPlotly({
+    ggplotly(
+      ggplot(filter(combinedPAData, measurement %in% 
+                      c('cases', 'normCases', 'fully_covered', 'normFullyVaccine', 'partially_covered', 'normPartially')),
+             aes(x = date, y = value, fill = measurement)) + 
+        geom_col(position = 'dodge') +
+        theme_classic() +
+        theme(legend.position = 'none') +
+        facet_wrap(~measurement, scales = 'free_y', nrow = 2)
+    )
+  })
+  
+  output$combinedPlotFacet <- renderPlotly({
+    ggplotly(
+      ggplot(filter(combinedPAData, measurement %in% c('normCases', 'normFullyVaccine', 'normPartially')), 
+             aes(y = value, x = date, fill = measurement)) + 
+        geom_col(position = 'dodge') +
+        facet_wrap(~measurement) +
+        theme_classic() +
+        theme(legend.position = 'none')
+    )
+  })
+  
+  output$combinedPlot <- renderPlotly({
+    ggplotly(
+      ggplot(filter(combinedPAData, measurement %in% c('normCases', 'normFullyVaccine', 'normPartially')),
+             aes(y = value, x = date, fill = measurement)) + 
+        geom_col(position = 'dodge') +
+        theme_classic()
       
-    }, ignoreInit = TRUE)
+    )
+  })
+  
+  output$annotationPlot <- renderPlotly({
+    ggplotly(
+      ggplot(filter(combinedPAData, measurement %in% c('normCases', 'normFullyVaccine', 'normPartially')),
+             aes(y = value, x = date, fill = measurement)) + 
+        geom_rect(aes(xmin = lubridate::as_date("2021-05-01"), 
+                      xmax = lubridate::as_date("2021-07-28"), 
+                      ymin = 0.0, ymax = 0.15),
+                  color = 'black', fill = 'gray', alpha = 0.1) +
+        geom_rect(aes(xmin = lubridate::as_date("2021-10-01"), 
+                      xmax = lubridate::as_date("2021-12-15"), 
+                      ymin = 0.0, ymax = 0.91),
+                  color = 'red', fill = 'gray', alpha = 0.1) +
+        geom_col(position = 'dodge') +
+        geom_segment(aes(x = lubridate::as_date("2020-12-11"), 
+                         xend = lubridate::as_date("2021-01-25"), 
+                         y = 0.75, yend = 0.5),
+                     arrow = arrow(length = unit(0.03, "npc")),
+                     color = 'black') +
+        
+        theme_classic()
+    )
+    
+  })
+  
+  
   
   # the code below will be used to make a map at some point in the future
   # paMap <- map('state', region = 'penn')
@@ -271,20 +333,25 @@ server <- function(input, output, session) {
   #   leaflet(paMap) %>%  setView(lng = -77.29, lat = 40.615, zoom = 7) %>% 
   #     addGeoJSON(paCounty, weight = 1, color = "#444444", fill = FALSE)
   # )
-    
+  
   # build download buttons
-    output$downloadPAStateCaseData <- downloadMe(paRollingAvg, "PA Case Data")
-    output$downloadPACountyCaseData <- downloadMe(casesCount %>% filter(county == input$casesCountyInput),
-                                                  paste(input$casesCountyInput, "Data"))
-    output$downloadAllPACountyCaseData <- downloadMe(casesCount, "All PA County Data")
-    
+  output$downloadPAStateCaseData <- downloadMe(paRollingAvg, "PA Case Data")
+  output$downloadPACountyCaseData <- downloadMe(casesCount %>% filter(county == input$casesCountyInput),
+                                                paste(input$casesCountyInput, "Data"))
+  output$downloadAllPACountyCaseData <- downloadMe(casesCount, "All PA County Data")
+  
+  output$downloadPAVaccineData <- downloadMe(paVaccinesDates, "PA Vaccine Data")
+  output$downloadPACountyVaccineData <- downloadMe(countyVaccineDate %>% filter(county == input$vaccineCountyInput),
+                                                   paste(input$vaccineCountyInput, "Data"))
+  output$downloadAllPACountyVaccineData <- downloadMe(countyVaccineDate, "All PA County Vaccine Data")
+  
   closeSweetAlert(session = session)
   sendSweetAlert(
     session = session,
     title ="Enjoy the data!",
     type = "success"
   )
-    
-
+  
+  
   
 }
